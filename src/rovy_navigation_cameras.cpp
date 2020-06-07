@@ -204,6 +204,11 @@ void t265Thread(ros::NodeHandle& nodeHandle) {
         rs2::config cfg;
         cfg.enable_stream(RS2_STREAM_POSE, RS2_FORMAT_6DOF);
         auto pipe = make_shared<rs2::pipeline>();
+
+        auto sensor = cfg.resolve(*pipe).get_device().query_sensors().front();
+        sensor.set_option(RS2_OPTION_ENABLE_RELOCALIZATION, 0);
+        sensor.set_option(RS2_OPTION_ENABLE_POSE_JUMPING, 0);
+
         pipe->start(cfg);
         cout << "t265Thread: Pipe started" << endl;
 
@@ -260,12 +265,16 @@ void d435Thread(ros::NodeHandle& nodeHandle) {
         string colorFrameId("d435_color_optical_frame");
         string depthFrameId("d435_depth_optical_frame");
 
+        rs2::align align_to_depth(RS2_STREAM_DEPTH);
+
         ulong sequence = 0;
 
         while (!ros::isShuttingDown()) {
             rs2::frameset frames = pipe.wait_for_frames();
-            auto color = frames.get_color_frame();
+            frames = align_to_depth.process(frames);
+
             auto depth = frames.get_depth_frame();
+            auto color = frames.get_color_frame();
 
             ros::Time t(frames.get_timestamp() / 1000.0);
 
