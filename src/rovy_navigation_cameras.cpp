@@ -71,7 +71,7 @@ void t265BuildOdomFrame(rs2::frameset& frames, nav_msgs::Odometry& odom_msg, con
     static tf2_ros::TransformBroadcaster br;
     geometry_msgs::TransformStamped msg;
     msg.header.stamp = t;
-    msg.header.frame_id = "base_link";
+    msg.header.frame_id = "world";
     msg.child_frame_id = "t265_pose_frame";
     msg.transform.translation.x = pose_msg.pose.position.x;
     msg.transform.translation.y = pose_msg.pose.position.y;
@@ -104,7 +104,7 @@ void t265BuildOdomFrame(rs2::frameset& frames, nav_msgs::Odometry& odom_msg, con
     tfv=tf::quatRotate(q,tfv);
     tf::vector3TFToMsg(tfv,om_msg.vector);
 
-    odom_msg.header.frame_id = "base_link";
+    odom_msg.header.frame_id = "world";
     odom_msg.child_frame_id = "t265_pose_frame";
     odom_msg.header.stamp = t;
     odom_msg.header.seq = sequence;
