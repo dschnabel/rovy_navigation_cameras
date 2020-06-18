@@ -12,7 +12,21 @@
 #include <iostream>
 #include <thread>
 
+#include <rovy_navigation_cameras/rovy_navigation_cameras.h>
+#include "ThreadSafeDeque.hpp"
+
 using namespace std;
+
+static ThreadSafeDeque odomBuffer;
+
+// external variables
+std::function<void()> color_fn;
+std::function<void()> depth_fn;
+bool colorArrived;
+
+void rovy_test_function() {
+    printf("Hello Rovy! You made it.\n");
+}
 
 void t265PublishTransform() {
     typedef struct transformMsg {
@@ -53,11 +67,11 @@ void t265PublishTransform() {
     staticTransformBroadcaster.sendTransform(msgs);
 }
 
-void t265BuildOdomFrame(rs2::frameset& frames, nav_msgs::Odometry& odom_msg, const ulong sequence) {
+void t265BuildOdomFrame(rs2::frameset& frames, const ros::Time& t,
+        nav_msgs::Odometry& odom_msg, const ulong sequence) {
+
     auto f = frames.first_or_default(RS2_STREAM_POSE);
     auto pose = f.as<rs2::pose_frame>().get_pose_data();
-
-    ros::Time t(frames.get_timestamp() / 1000.0);
 
     geometry_msgs::PoseStamped pose_msg;
     pose_msg.pose.position.x = -pose.translation.z;
@@ -223,12 +237,19 @@ void t265Thread(ros::NodeHandle& nodeHandle) {
             try {
                 auto frames = pipe->wait_for_frames(1000);
 
-                nav_msgs::Odometry odom_msg;
-                t265BuildOdomFrame(frames, odom_msg, sequence);
+                ros::Time t(frames.get_timestamp() / 1000.0);
 
-                odom_pub.publish(odom_msg);
+                if (odom_pub.getNumSubscribers() > 0) {
+                    nav_msgs::Odometry odom_msg;
+                    t265BuildOdomFrame(frames, t, odom_msg, sequence);
 
-                sequence++;
+                    odom_pub.publish(odom_msg);
+                    sequence++;
+                }
+
+//                cout << "T265: " << t << endl;
+                odomBuffer.update(t.toNSec());
+
             } catch (const rs2::error & e) {
                 cout << "restarting T265..." << endl;
                 pipe->stop();
@@ -248,8 +269,8 @@ void t265Thread(ros::NodeHandle& nodeHandle) {
 void d435Thread(ros::NodeHandle& nodeHandle) {
     try {
         rs2::config cfg;
-        cfg.enable_stream(RS2_STREAM_DEPTH, 424, 240, RS2_FORMAT_ANY, 30);
-        cfg.enable_stream(RS2_STREAM_COLOR, 424, 240, RS2_FORMAT_ANY, 30);
+        cfg.enable_stream(RS2_STREAM_DEPTH, 640, 480, RS2_FORMAT_ANY, 60);
+        cfg.enable_stream(RS2_STREAM_COLOR, 640, 480, RS2_FORMAT_ANY, 60);
         rs2::pipeline pipe;
         pipe.start(cfg);
         cout << "d435Thread: Pipe started" << endl;
@@ -265,13 +286,26 @@ void d435Thread(ros::NodeHandle& nodeHandle) {
         string colorFrameId("d435_color_optical_frame");
         string depthFrameId("d435_depth_optical_frame");
 
-        rs2::align align_to_depth(RS2_STREAM_DEPTH);
+        rs2::align align_to_color(RS2_STREAM_COLOR);
 
         ulong sequence = 0;
+        clock_t start = clock();
 
+        rs2::frameset frames_drop;
         while (!ros::isShuttingDown()) {
+
+            int diff = 1000000.0 * (clock() - start) / CLOCKS_PER_SEC;
+            usleep(1000000 - diff);
+            start = clock();
+
+            while (pipe.poll_for_frames(&frames_drop));
+
+            colorArrived = false;
+            color_fn();
+            depth_fn();
+
             rs2::frameset frames = pipe.wait_for_frames();
-            frames = align_to_depth.process(frames);
+            frames = align_to_color.process(frames);
 
             auto depth = frames.get_depth_frame();
             auto color = frames.get_color_frame();
@@ -292,9 +326,14 @@ void d435Thread(ros::NodeHandle& nodeHandle) {
             camInfo.header.stamp = t;
             camInfo.header.seq = sequence;
 
-            color_pub.publish((sensor_msgs::ImageConstPtr)colorImg_msg);
-            depth_pub.publish((sensor_msgs::ImageConstPtr)depthImg_msg);
-            camInfo_pub.publish(camInfo);
+//            cout << "D435: " << colorImg_msg->header.stamp << ", size: " << frames.size() << endl;
+            ros::Time c;
+            c.fromNSec(odomBuffer.getClosest(colorImg_msg->header.stamp.toNSec()));
+            cout << "closest: " << c << endl;
+
+//            color_pub.publish((sensor_msgs::ImageConstPtr)colorImg_msg);
+//            depth_pub.publish((sensor_msgs::ImageConstPtr)depthImg_msg);
+//            camInfo_pub.publish(camInfo);
 
             sequence++;
         }

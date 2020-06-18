@@ -51,7 +51,15 @@
   <buildtool_depend>catkin</buildtool_depend>
   <build_depend>roscpp</build_depend>
   <build_export_depend>roscpp</build_export_depend>
-  <exec_depend>roscpp</exec_depend>
+  
+  <!-- executable -->
+  <!-- <exec_depend>roscpp</exec_depend> -->
+  
+  <!-- library -->
+  <depend>tf2_geometry_msgs</depend>
+  <depend>tf</depend>
+  <depend>cv_bridge</depend>
+  <depend>image_transport</depend>
 
 
   <!-- The export tag contains other, unspecified, tags -->
