@@ -314,12 +314,17 @@ void d435Thread(ros::NodeHandle& nodeHandle) {
             while (pipe.poll_for_frames(&frames_drop));
 
             rs2::frameset frames = pipe.wait_for_frames();
-            frames = align_to_color.process(frames);
-
-            auto depth = frames.get_depth_frame();
-            auto color = frames.get_color_frame();
 
             ros::Time t(frames.get_timestamp() / 1000.0);
+
+            frame* odomFrame = odomBuffer.getClosest(t.toNSec());
+            if (!odomFrame) {
+                continue;
+            }
+
+            frames = align_to_color.process(frames);
+            auto depth = frames.get_depth_frame();
+            auto color = frames.get_color_frame();
 
             sensor_msgs::ImagePtr colorImg_msg;
             uint width = d435BuildImageFrame(color, t, colorImg_msg, matColorImg,
@@ -335,14 +340,7 @@ void d435Thread(ros::NodeHandle& nodeHandle) {
             camInfo.header.stamp = t;
             camInfo.header.seq = sequence;
 
-            frame* t265Frame = odomBuffer.getClosest(colorImg_msg->header.stamp.toNSec());
-            if (!t265Frame) {
-                continue;
-            }
-
-//            cout << "D435: " << colorImg_msg->header.stamp << ", size: " << frames.size() << endl;
-            ros::Time t2(t265Frame->get_timestamp() / 1000.0);
-            cout << "matched:" << t2 << endl;
+            delete odomFrame;
 
 //            color_pub.publish((sensor_msgs::ImageConstPtr)colorImg_msg);
 //            depth_pub.publish((sensor_msgs::ImageConstPtr)depthImg_msg);

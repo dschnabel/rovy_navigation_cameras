@@ -12,7 +12,7 @@
 #include <deque>
 #include <mutex>
 
-#define QUEUE_SIZE 200
+#define QUEUE_SIZE 50
 
 using namespace std;
 using namespace rs2;
@@ -34,7 +34,8 @@ public:
     frame* getClosest(uint64_t stamp) {
         lock_guard<mutex> lock(mutex_);
         if (deque_.size() > 0) {
-            return binarySearch(0, deque_.size()-1, stamp);
+            frame* f = binarySearch(0, deque_.size()-1, stamp);
+            return f ? new frame(*f) : NULL;
         } else {
             return NULL;
         }
