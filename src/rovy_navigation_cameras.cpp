@@ -248,8 +248,9 @@ void t265Thread(ros::NodeHandle& nodeHandle) {
         while (ros::ok()) {
             try {
                 auto frames = pipe->wait_for_frames(1000);
+                auto frame = frames.first_or_default(RS2_STREAM_POSE);
 
-                ros::Time t(frames.get_timestamp() / 1000.0);
+                ros::Time t(frame.get_timestamp() / 1000.0);
 
                 if (odom_pub.getNumSubscribers() > 0) {
                     nav_msgs::Odometry odom_msg;
@@ -260,7 +261,7 @@ void t265Thread(ros::NodeHandle& nodeHandle) {
                 }
 
 //                cout << "T265: " << t << endl;
-                odomBuffer.update(t.toNSec());
+                odomBuffer.update(t.toNSec(), frame);
 
             } catch (const rs2::error & e) {
                 cout << "restarting T265..." << endl;
@@ -334,10 +335,14 @@ void d435Thread(ros::NodeHandle& nodeHandle) {
             camInfo.header.stamp = t;
             camInfo.header.seq = sequence;
 
+            frame* t265Frame = odomBuffer.getClosest(colorImg_msg->header.stamp.toNSec());
+            if (!t265Frame) {
+                continue;
+            }
+
 //            cout << "D435: " << colorImg_msg->header.stamp << ", size: " << frames.size() << endl;
-            ros::Time c;
-            c.fromNSec(odomBuffer.getClosest(colorImg_msg->header.stamp.toNSec()));
-            cout << "closest: " << c << endl;
+            ros::Time t2(t265Frame->get_timestamp() / 1000.0);
+            cout << "matched:" << t2 << endl;
 
 //            color_pub.publish((sensor_msgs::ImageConstPtr)colorImg_msg);
 //            depth_pub.publish((sensor_msgs::ImageConstPtr)depthImg_msg);

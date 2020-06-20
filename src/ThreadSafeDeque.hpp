@@ -8,38 +8,45 @@
 #ifndef SRC_THREADSAFEDEQUE_HPP_
 #define SRC_THREADSAFEDEQUE_HPP_
 
+#include <ros/ros.h>
 #include <deque>
 #include <mutex>
 
 #define QUEUE_SIZE 200
 
 using namespace std;
+using namespace rs2;
+
+typedef pair<uint64_t, frame*> framePair;
 
 class ThreadSafeDeque {
 public:
-    void update(uint64_t stamp) {
+    void update(uint64_t t, rs2::frame& f) {
         lock_guard<mutex> lock(mutex_);
         if (deque_.size() >= QUEUE_SIZE) {
+            frame* f = deque_.front().second;
             deque_.pop_front();
+            delete f;
         }
-        deque_.push_back(stamp);
+        deque_.push_back(framePair(t, new frame(f)));
     }
 
-    uint64_t getClosest(uint64_t stamp) {
+    frame* getClosest(uint64_t stamp) {
         lock_guard<mutex> lock(mutex_);
         if (deque_.size() > 0) {
             return binarySearch(0, deque_.size()-1, stamp);
         } else {
-            return 0;
+            return NULL;
         }
     }
 private:
-    uint64_t binarySearch(uint p, uint r, uint64_t stamp) {
+    frame* binarySearch(uint p, uint r, uint64_t stamp) {
         if (p < r) {
             uint mid = (p + r)/2;
-            uint64_t val = deque_.at(mid);
+            framePair &el = deque_.at(mid);
+            uint64_t val = el.first;
             if (val == stamp) {
-                return val;
+                return el.second;
             }
             if (val > stamp) {
                 if (mid == p) mid++;
@@ -50,26 +57,26 @@ private:
                 return binarySearch(mid+1, r, stamp);
             }
         } else if (p == r) {
-            uint64_t val = deque_.at(p);
-            int diff = val - stamp;
+            framePair &el = deque_.at(p);
+            int diff = el.first - stamp;
             if (diff > 0) {
-                if (p == 0) return 0;
-                uint64_t val2 = deque_.at(p-1);
-                int diff2 = stamp - val2;
-                return (diff < diff2) ? val : val2;
+                if (p == 0) return NULL;
+                framePair &el2 = deque_.at(p-1);
+                int diff2 = stamp - el2.first;
+                return (diff < diff2) ? el.second : el2.second;
             } else if (diff < 0) {
-                if (p >= deque_.size()-1) return 0;
-                uint64_t val2 = deque_.at(p+1);
-                int diff2 = val2 - stamp;
-                return (abs(diff) < diff2) ? val : val2;
+                if (p >= deque_.size()-1) return NULL;
+                framePair &el2 = deque_.at(p+1);
+                int diff2 = el2.first - stamp;
+                return (abs(diff) < diff2) ? el.second : el2.second;
             } else {
-                return val;
+                return el.second;
             }
         }
-        return 0;
+        return NULL;
     }
 
-    deque<uint64_t> deque_;
+    deque<framePair> deque_;
     mutex mutex_;
 };
 
