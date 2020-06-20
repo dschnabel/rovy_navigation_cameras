@@ -164,6 +164,18 @@ uint d435BuildImageFrame(const rs2::video_frame& frame, const ros::Time& t, sens
     return width;
 }
 
+void d435TriggerFrame(bool *d435TriggerFrameTerminate) {
+    ros::Rate rate(1);
+
+    while (!*d435TriggerFrameTerminate) {
+        colorArrived = false;
+        if (color_fn) color_fn();
+        if (depth_fn) depth_fn();
+
+        rate.sleep();
+    }
+}
+
 void d435UpdateCamInfo(rs2::video_frame& frame, sensor_msgs::CameraInfo& camInfo, const string& frameId) {
     const rs2::video_stream_profile& video_profile = frame.get_profile().as<rs2::video_stream_profile>();
     auto intrinsic = video_profile.get_intrinsics();
@@ -233,7 +245,7 @@ void t265Thread(ros::NodeHandle& nodeHandle) {
 
         ulong sequence = 0;
 
-        while (!ros::isShuttingDown()) {
+        while (ros::ok()) {
             try {
                 auto frames = pipe->wait_for_frames(1000);
 
@@ -267,6 +279,9 @@ void t265Thread(ros::NodeHandle& nodeHandle) {
 }
 
 void d435Thread(ros::NodeHandle& nodeHandle) {
+    bool d435TriggerFrameTerminate = false;
+    thread triggerFrame;
+
     try {
         rs2::config cfg;
         cfg.enable_stream(RS2_STREAM_DEPTH, 640, 480, RS2_FORMAT_ANY, 60);
@@ -289,20 +304,13 @@ void d435Thread(ros::NodeHandle& nodeHandle) {
         rs2::align align_to_color(RS2_STREAM_COLOR);
 
         ulong sequence = 0;
-        clock_t start = clock();
+        sleep(1);
 
-        rs2::frameset frames_drop;
-        while (!ros::isShuttingDown()) {
+        triggerFrame = thread(d435TriggerFrame, &d435TriggerFrameTerminate);
 
-            int diff = 1000000.0 * (clock() - start) / CLOCKS_PER_SEC;
-            usleep(1000000 - diff);
-            start = clock();
-
+        while (ros::ok()) {
+            rs2::frameset frames_drop;
             while (pipe.poll_for_frames(&frames_drop));
-
-            colorArrived = false;
-            color_fn();
-            depth_fn();
 
             rs2::frameset frames = pipe.wait_for_frames();
             frames = align_to_color.process(frames);
@@ -343,6 +351,9 @@ void d435Thread(ros::NodeHandle& nodeHandle) {
     } catch (const exception& e) {
         cerr << "d435Thread: " << e.what() << endl;
     }
+
+    d435TriggerFrameTerminate = true;
+    triggerFrame.join();
 }
 
 int main(int argc, char **argv) try {

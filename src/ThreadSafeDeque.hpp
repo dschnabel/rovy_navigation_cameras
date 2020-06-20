@@ -11,7 +11,7 @@
 #include <deque>
 #include <mutex>
 
-#define QUEUE_SIZE 140
+#define QUEUE_SIZE 200
 
 using namespace std;
 
