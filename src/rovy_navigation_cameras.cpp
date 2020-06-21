@@ -18,15 +18,17 @@
 using namespace std;
 
 static ThreadSafeDeque odomBuffer;
+static std::function<void(
+        const nav_msgs::OdometryConstPtr& odomMsg,
+        const sensor_msgs::ImageConstPtr& imageMsg,
+        const sensor_msgs::ImageConstPtr& depthMsg,
+        const sensor_msgs::CameraInfoConstPtr& cameraInfoMsg)> rtabmapCallback;
+
 
 // external variables
 std::function<void()> color_fn;
 std::function<void()> depth_fn;
 bool colorArrived;
-
-void rovy_test_function() {
-    printf("Hello Rovy! You made it.\n");
-}
 
 void t265PublishTransform() {
     typedef struct transformMsg {
@@ -67,10 +69,9 @@ void t265PublishTransform() {
     staticTransformBroadcaster.sendTransform(msgs);
 }
 
-void t265BuildOdomFrame(rs2::frameset& frames, const ros::Time& t,
+void t265BuildOdomFrame(rs2::frame& f, const ros::Time& t,
         nav_msgs::Odometry& odom_msg, const ulong sequence) {
 
-    auto f = frames.first_or_default(RS2_STREAM_POSE);
     auto pose = f.as<rs2::pose_frame>().get_pose_data();
 
     geometry_msgs::PoseStamped pose_msg;
@@ -240,7 +241,6 @@ void t265Thread(ros::NodeHandle& nodeHandle) {
 
         t265PublishTransform();
 
-        ros::NodeHandle n;
         ros::Publisher odom_pub = nodeHandle.advertise<nav_msgs::Odometry>("odom", 1);
 
         ulong sequence = 0;
@@ -254,7 +254,7 @@ void t265Thread(ros::NodeHandle& nodeHandle) {
 
                 if (odom_pub.getNumSubscribers() > 0) {
                     nav_msgs::Odometry odom_msg;
-                    t265BuildOdomFrame(frames, t, odom_msg, sequence);
+                    t265BuildOdomFrame(frame, t, odom_msg, sequence);
 
                     odom_pub.publish(odom_msg);
                     sequence++;
@@ -291,11 +291,11 @@ void d435Thread(ros::NodeHandle& nodeHandle) {
         pipe.start(cfg);
         cout << "d435Thread: Pipe started" << endl;
 
-        image_transport::ImageTransport it(nodeHandle);
-        image_transport::Publisher color_pub = it.advertise("color", 1);
-        image_transport::Publisher depth_pub = it.advertise("depth", 1);
+//        image_transport::ImageTransport it(nodeHandle);
+//        image_transport::Publisher color_pub = it.advertise("color", 1);
+//        image_transport::Publisher depth_pub = it.advertise("depth", 1);
 
-        ros::Publisher camInfo_pub = nodeHandle.advertise<sensor_msgs::CameraInfo>("camera_info", 1);
+//        ros::Publisher camInfo_pub = nodeHandle.advertise<sensor_msgs::CameraInfo>("camera_info", 1);
 
         cv::Mat matColorImg, matDepthImg;
         sensor_msgs::CameraInfo camInfo;
@@ -340,6 +340,16 @@ void d435Thread(ros::NodeHandle& nodeHandle) {
             camInfo.header.stamp = t;
             camInfo.header.seq = sequence;
 
+            if (rtabmapCallback) {
+                nav_msgs::Odometry odom_msg;
+                t265BuildOdomFrame(*odomFrame, t, odom_msg, sequence);
+
+                const nav_msgs::OdometryConstPtr odomMsgPtr(new nav_msgs::Odometry(odom_msg));
+                const sensor_msgs::CameraInfoConstPtr cameraInfoMsgPtr(new sensor_msgs::CameraInfo(camInfo));
+
+                rtabmapCallback(odomMsgPtr, colorImg_msg, depthImg_msg, cameraInfoMsgPtr);
+            }
+
             delete odomFrame;
 
 //            color_pub.publish((sensor_msgs::ImageConstPtr)colorImg_msg);
@@ -376,4 +386,29 @@ int main(int argc, char **argv) try {
 } catch (const exception& e) {
     cerr << e.what() << endl;
     return EXIT_FAILURE;
+}
+
+int rovy_start_cameras(ros::NodeHandle& nodeHandle, std::function<void(
+        const nav_msgs::OdometryConstPtr& odomMsg,
+        const sensor_msgs::ImageConstPtr& imageMsg,
+        const sensor_msgs::ImageConstPtr& depthMsg,
+        const sensor_msgs::CameraInfoConstPtr& cameraInfoMsg)> callback) {
+
+    rtabmapCallback = callback;
+
+    try {
+        thread first(t265Thread, ref(nodeHandle));
+        thread second(d435Thread, ref(nodeHandle));
+
+        first.detach();
+        second.detach();
+
+        return 0;
+    } catch (const rs2::error & e) {
+        cerr << "RealSense error calling " << e.get_failed_function() << "(" << e.get_failed_args() << "):\n    " << e.what() << endl;
+        return -1;
+    } catch (const exception& e) {
+        cerr << e.what() << endl;
+        return -1;
+    }
 }
