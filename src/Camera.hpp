@@ -84,7 +84,7 @@ private:
     void updateScanInfo();
     double magnitudeOfRay(const cv::Point3d& ray);
     double angleBetweenRays(const cv::Point3d& ray1, const cv::Point3d& ray2);
-    void convertDepthToScan();
+    void processScan(ros::Time& ts);
 
     cv::Mat matColorImg_, matDepthImg_;
     sensor_msgs::CameraInfoPtr camInfo_;
@@ -94,7 +94,10 @@ private:
     rs2::align alignToColor_;
     ros::Rate rateHz_;
     RtabmapCallback& rtabmapCallback_;
+
     bool scanOnlyRound_;
+    thread scanThread_;
+    ulong scanSequence_;
 
 #if PUBLISH_COLOR_DEPTH
     image_transport::ImageTransport imageTransport_;

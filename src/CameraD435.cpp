@@ -16,6 +16,7 @@ Camera(5000, odomBuffer)
 ,rateHz_(RATE_HZ)
 ,rtabmapCallback_(callback)
 ,scanOnlyRound_(true)
+,scanSequence_(0)
 #if PUBLISH_COLOR_DEPTH
 ,imageTransport_(nodeHandle)
 ,colorPub_(imageTransport_.advertise("color", 1))
@@ -81,12 +82,9 @@ void D435Camera::cameraThread() {
                 updateScanInfo();
             }
 
-            scan_->header.stamp = ts;
-            scan_->header.seq = sequence_;
-
-            // process scan
-            convertDepthToScan();
-            scanPub_.publish(scan_);
+            // process scan in separate thread (wait for previous thread to terminate)
+            if (scanThread_.joinable()) scanThread_.join();
+            scanThread_ = thread(&D435Camera::processScan, this, ref(ts));
             if (scanOnlyRound_) continue;
 
             auto color = frames.get_color_frame();
@@ -243,7 +241,7 @@ double D435Camera::magnitudeOfRay(const cv::Point3d& ray) {
   return sqrt(pow(ray.x, 2.0) + pow(ray.y, 2.0) + pow(ray.z, 2.0));
 }
 
-void D435Camera::convertDepthToScan() {
+void D435Camera::processScan(ros::Time& ts) {
     cv::Size depth_size = matDepthImg_.size();
     int width = depth_size.width;
     uint16_t distance[width] = {0};
@@ -253,7 +251,7 @@ void D435Camera::convertDepthToScan() {
     scan_->ranges.assign(width, std::numeric_limits<float>::quiet_NaN());
 
     for (int u = 0; u < width; u++) {
-        for (int v = depth_size.height/2; v < depth_size.height/2+1; v++) {
+        for (int v = 0; v < depth_size.height; v++) {
             uint16_t depth_i = matDepthImg_.at<uint16_t>(v, u);
             if (depth_i > 0) {
                 if (distance[u] > 0) {
@@ -271,4 +269,9 @@ void D435Camera::convertDepthToScan() {
             scan_->ranges[width-u-1] = hypot(x, z) / 1000.0;
         }
     }
+
+    scan_->header.stamp = ts;
+    scan_->header.seq = scanSequence_++;
+
+    scanPub_.publish(scan_);
 }
