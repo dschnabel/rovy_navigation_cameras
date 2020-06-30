@@ -28,14 +28,6 @@ Camera(5000, odomBuffer)
     cfg_.enable_stream(RS2_STREAM_DEPTH, 640, 480, RS2_FORMAT_ANY, 60);
     cfg_.enable_stream(RS2_STREAM_COLOR, 640, 480, RS2_FORMAT_ANY, 60);
 
-    for (auto sensor : getSensors()) {
-        if (strcmp(sensor.get_info(RS2_CAMERA_INFO_NAME), "RGB Camera") == 0) {
-//            rs2::option_range range = sensor.get_option_range(RS2_OPTION_EXPOSURE);
-//            cout<<"min:"<<range.min<<",max:"<<range.max<<",def:"<<range.def<<",step:"<<range.min<<endl;
-            sensor.set_option(RS2_OPTION_EXPOSURE, 50);
-        }
-    }
-
     start();
 }
 
@@ -72,6 +64,9 @@ void D435Camera::cameraThread() {
 
             frames = alignToColor_.process(frames);
 
+            // wait for scan thread to terminate
+            if (scanThread_.joinable()) scanThread_.join();
+
             auto depth = frames.get_depth_frame();
             sensor_msgs::ImagePtr depthImg_msg;
             uint width = buildImageFrame(depth, ts, depthImg_msg, matDepthImg_, CV_16UC1,
@@ -82,8 +77,7 @@ void D435Camera::cameraThread() {
                 updateScanInfo();
             }
 
-            // process scan in separate thread (wait for previous thread to terminate)
-            if (scanThread_.joinable()) scanThread_.join();
+            // process scan in separate thread
             scanThread_ = thread(&D435Camera::processScan, this, ref(ts));
             if (scanOnlyRound_) continue;
 
