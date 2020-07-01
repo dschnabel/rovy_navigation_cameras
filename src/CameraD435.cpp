@@ -1,9 +1,16 @@
 #include "Camera.hpp"
 
-// external variables
-std::function<void()> color_fn;
-std::function<void()> depth_fn;
+#include <fstream>
+
+// external variables used by librealsense
+function<void()> color_fn;
+function<void()> depth_fn;
 bool colorArrived;
+
+struct floorDataPair {
+    int min;
+    int max;
+};
 
 D435Camera::D435Camera(ros::NodeHandle& nodeHandle, ThreadSafeDeque& odomBuffer, RtabmapCallback& callback)
 :
@@ -13,11 +20,11 @@ Camera(5000, odomBuffer)
 ,colorFrameId_("d435_color_optical_frame")
 ,depthFrameId_("d435_depth_optical_frame")
 ,alignToColor_(RS2_STREAM_COLOR)
-,rateHz_(RATE_HZ)
+,rateHz_(D435_RATE_HZ)
 ,rtabmapCallback_(callback)
 ,scanOnlyRound_(true)
 ,scanSequence_(0)
-#if PUBLISH_COLOR_DEPTH
+#if D435_PUBLISH_COLOR_DEPTH
 ,imageTransport_(nodeHandle)
 ,colorPub_(imageTransport_.advertise("color", 1))
 ,depthPub_(imageTransport_.advertise("depth", 1))
@@ -28,10 +35,84 @@ Camera(5000, odomBuffer)
     cfg_.enable_stream(RS2_STREAM_DEPTH, 640, 480, RS2_FORMAT_ANY, 60);
     cfg_.enable_stream(RS2_STREAM_COLOR, 640, 480, RS2_FORMAT_ANY, 60);
 
+    ifstream floorDataFile("/opt/floorData.bin", ios::binary);
+    if (floorDataFile.good()) {
+        for (int x = 0; x < FLOOR_MATRIX_WIDTH; x++) {
+            for (int y = 0; y < FLOOR_MATRIX_HEIGHT; y++) {
+                struct floorDataPair pair;
+                floorDataFile.read((char*)&pair, sizeof(pair));
+                floorMatrix_[x][y] = make_pair(pair.min, pair.max);
+            }
+        }
+        floorDataFile.close();
+        cout << "D435Camera: floor data loaded" << endl;
+    } else {
+        for (int x = 0; x < FLOOR_MATRIX_WIDTH; x++) {
+            for (int y = 0; y < FLOOR_MATRIX_HEIGHT; y++) {
+                floorMatrix_[x][y] = make_pair(FLOOR_UNDEFINED_DISTANCE, FLOOR_UNDEFINED_DISTANCE);
+            }
+        }
+        cout << "D435Camera: no floor data" << endl;
+    }
+
     start();
 }
 
-D435Camera::~D435Camera() { wait(); }
+D435Camera::~D435Camera() {
+    // wait for thread to terminate
+    wait();
+
+#if FLOOR_CALIBRATION_MODE
+    // fill in missing points
+    for (int x = 0; x < FLOOR_MATRIX_WIDTH; x++) {
+        for (int y = 0; y < FLOOR_MATRIX_HEIGHT; y++) {
+            pair<int,int> &floorData = floorMatrix_[x][y];
+            int &min = floorData.first;
+            int &max = floorData.second;
+
+            if (min == FLOOR_UNDEFINED_DISTANCE) {
+                int xx = x;
+                while (xx > 0 && floorMatrix_[xx][y].first == FLOOR_UNDEFINED_DISTANCE) {
+                    xx--;
+                }
+                if (xx == 0) {
+                    xx = x;
+                    while (xx < FLOOR_MATRIX_WIDTH && floorMatrix_[xx][y].first == FLOOR_UNDEFINED_DISTANCE) {
+                        xx++;
+                    }
+                }
+                floorMatrix_[x][y] = make_pair(floorMatrix_[xx][y].first, floorMatrix_[x][y].second);
+            }
+
+            if (max == FLOOR_UNDEFINED_DISTANCE) {
+                int xx = x;
+                while (xx > 0 && floorMatrix_[xx][y].second == FLOOR_UNDEFINED_DISTANCE) {
+                    xx--;
+                }
+                if (xx == 0) {
+                    xx = x;
+                    while (xx < FLOOR_MATRIX_WIDTH && floorMatrix_[xx][y].second == FLOOR_UNDEFINED_DISTANCE) {
+                        xx++;
+                    }
+                }
+                floorMatrix_[x][y] = make_pair(floorMatrix_[x][y].first, floorMatrix_[xx][y].second);
+            }
+        }
+    }
+
+    ofstream floorDataFile("floorData.bin", ios::binary);
+    for (int x = 0; x < FLOOR_MATRIX_WIDTH; x++) {
+        for (int y = 0; y < FLOOR_MATRIX_HEIGHT; y++) {
+            const pair<int,int> &floorData = floorMatrix_[x][y];
+            struct floorDataPair pair;
+            pair.min = floorData.first;
+            pair.max = floorData.second;
+            floorDataFile.write((char*)&pair, sizeof(pair));
+        }
+    }
+    floorDataFile.close();
+#endif
+}
 
 void D435Camera::cameraThread() {
     cout << "D435Camera started" << endl;
@@ -103,7 +184,7 @@ void D435Camera::cameraThread() {
             }
 
             // publish topics
-#if PUBLISH_COLOR_DEPTH
+#if D435_PUBLISH_COLOR_DEPTH
             colorPub_.publish((sensor_msgs::ImageConstPtr)colorImg_msg);
             depthPub_.publish((sensor_msgs::ImageConstPtr)depthImg_msg);
             camInfoPub_.publish(camInfo_);
@@ -219,7 +300,7 @@ void D435Camera::updateScanInfo() {
     scan_->angle_max = angle_max;
     scan_->angle_increment = (scan_->angle_max - scan_->angle_min) / (matDepthImg_.cols-1);
     scan_->time_increment = 0.0;
-    scan_->scan_time = 1.0/(double)RATE_HZ;
+    scan_->scan_time = 1.0/(double)D435_RATE_HZ;
     scan_->range_min = 0.0;
     scan_->range_max = 3.0;
 }
@@ -238,23 +319,32 @@ double D435Camera::magnitudeOfRay(const cv::Point3d& ray) {
 void D435Camera::processScan(ros::Time& ts) {
     cv::Size depth_size = matDepthImg_.size();
     int width = depth_size.width;
+    int height = depth_size.height;
     uint16_t distance[width] = {0};
     const float center_x = camModel_.cx();
     const float constant_x = 1.0 / camModel_.fx();
 
-    scan_->ranges.assign(width, std::numeric_limits<float>::quiet_NaN());
+    scan_->ranges.assign(width, numeric_limits<float>::quiet_NaN());
 
     for (int u = 0; u < width; u++) {
-        for (int v = 0; v < depth_size.height; v++) {
-            uint16_t depth_i = matDepthImg_.at<uint16_t>(v, u);
+        for (int v = 0; v < height; v++) {
+            uint16_t depth_i = matDepthImg_.at<uint16_t>(height-v-1, u);
             if (depth_i > 0) {
-                if (distance[u] > 0) {
-                    if (distance[u] > depth_i) {
+#if FLOOR_CALIBRATION_MODE
+                if (v < FLOOR_MATRIX_HEIGHT) {
+                    calibrateFloor(u, v, depth_i);
+                }
+#else
+                if (!isFloor(u, v, depth_i)) {
+                    if (distance[u] > 0) {
+                        if (distance[u] > depth_i) {
+                            distance[u] = depth_i;
+                        }
+                    } else {
                         distance[u] = depth_i;
                     }
-                } else {
-                    distance[u] = depth_i;
                 }
+#endif
             }
         }
         if (distance[u] > 0) {
@@ -268,4 +358,57 @@ void D435Camera::processScan(ros::Time& ts) {
     scan_->header.seq = scanSequence_++;
 
     scanPub_.publish(scan_);
+}
+
+void D435Camera::calibrateFloor(const int x, const int y, const int distance) {
+#if FLOOR_CALIBRATION_MODE
+    if (x < 0 || x >= FLOOR_MATRIX_WIDTH) return;
+    if (y < 0 || y >= FLOOR_MATRIX_HEIGHT) return;
+
+    if (distance > 350 && distance < 2000) {
+        static unsigned int counter = 0;
+        static int override = 0;
+        if (counter++ >= 500000) {
+            if (counter == 500001) {
+                cout << "Starting calibration ..." << endl;
+            }
+
+            pair<int,int> &floorData = floorMatrix_[x][y];
+            int min = floorData.first;
+            int max = floorData.second;
+            if (min == FLOOR_UNDEFINED_DISTANCE || max == FLOOR_UNDEFINED_DISTANCE) {
+                floorMatrix_[x][y] = make_pair(distance, distance);
+            } else if (distance < min) {
+                floorMatrix_[x][y] = make_pair(distance, max);
+                override++;
+            } else if (distance > max) {
+                floorMatrix_[x][y] = make_pair(min, distance);
+                override++;
+            }
+
+            static int counter2 = 0;
+            if (counter2++ >= 500000) {
+                cout << "new limits: " << override << "\n";
+                counter2 = 0;
+                override = 0;
+            }
+        }
+    }
+#endif
+}
+
+bool D435Camera::isFloor(const int x, const int y, const int distance) {
+    if (y < 0 || y >= FLOOR_MATRIX_HEIGHT) return false;
+    if (x < 0 || x >= FLOOR_MATRIX_WIDTH) return false;
+    if (distance == 0) return false;
+
+    const pair<int,int> &floorData = floorMatrix_[x][y];
+    const double &min = floorData.first;
+//    const double &max = floorData.second;
+
+    if (distance >= min-10-y*0.5) {
+        return true;
+    }
+
+    return false;
 }

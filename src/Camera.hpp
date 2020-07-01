@@ -22,8 +22,13 @@
 
 #include "ThreadSafeDeque.hpp"
 
-#define PUBLISH_COLOR_DEPTH 0
-#define RATE_HZ 2
+#define D435_PUBLISH_COLOR_DEPTH 0
+#define D435_RATE_HZ 2
+
+#define FLOOR_CALIBRATION_MODE 0
+#define FLOOR_MATRIX_WIDTH   640
+#define FLOOR_MATRIX_HEIGHT   145
+#define FLOOR_UNDEFINED_DISTANCE 0
 
 using namespace std;
 
@@ -85,6 +90,8 @@ private:
     double magnitudeOfRay(const cv::Point3d& ray);
     double angleBetweenRays(const cv::Point3d& ray1, const cv::Point3d& ray2);
     void processScan(ros::Time& ts);
+    void calibrateFloor(const int x, const int y, const int distance);
+    bool isFloor(const int x, const int y, const int distance);
 
     cv::Mat matColorImg_, matDepthImg_;
     sensor_msgs::CameraInfoPtr camInfo_;
@@ -99,13 +106,15 @@ private:
     thread scanThread_;
     ulong scanSequence_;
 
-#if PUBLISH_COLOR_DEPTH
+#if D435_PUBLISH_COLOR_DEPTH
     image_transport::ImageTransport imageTransport_;
     image_transport::Publisher colorPub_;
     image_transport::Publisher depthPub_;
     ros::Publisher camInfoPub_;
 #endif
     ros::Publisher scanPub_;
+
+    pair<int,int> floorMatrix_[FLOOR_MATRIX_WIDTH][FLOOR_MATRIX_HEIGHT];
 };
 
 #endif /* SRC_CAMERA_HPP_ */
