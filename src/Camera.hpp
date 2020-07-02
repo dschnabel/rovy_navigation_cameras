@@ -21,6 +21,7 @@
 #include <librealsense2/rs.hpp>
 
 #include "ThreadSafeDeque.hpp"
+#include "MedianFilter.h"
 
 #define D435_PUBLISH_COLOR_DEPTH 0
 #define D435_RATE_HZ 2
@@ -29,6 +30,8 @@
 #define FLOOR_MATRIX_WIDTH   640
 #define FLOOR_MATRIX_HEIGHT   145
 #define FLOOR_UNDEFINED_DISTANCE 0
+
+#define SCAN_MEDIAN_FILTER_ELEMENTS 51 // must be uneven number
 
 using namespace std;
 
@@ -105,6 +108,9 @@ private:
     bool scanOnlyRound_;
     thread scanThread_;
     ulong scanSequence_;
+    sMedianFilter_t scanMedianFilter_;
+    sMedianNode_t scanMedianBuffer_[SCAN_MEDIAN_FILTER_ELEMENTS];
+    const uint scanMedianBufferSkipElements_;
 
 #if D435_PUBLISH_COLOR_DEPTH
     image_transport::ImageTransport imageTransport_;

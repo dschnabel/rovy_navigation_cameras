@@ -15,7 +15,8 @@ if(STANDALONE)
         src/rovy_navigation_cameras.cpp
         src/Camera.cpp
         src/CameraT265.cpp
-        src/CameraD435.cpp)
+        src/CameraD435.cpp
+        src/MedianFilter.c)
 else()
     ##library##
     catkin_package(INCLUDE_DIRS include
@@ -25,7 +26,8 @@ else()
         src/rovy_navigation_cameras.cpp
         src/Camera.cpp
         src/CameraT265.cpp
-        src/CameraD435.cpp)
+        src/CameraD435.cpp
+        src/MedianFilter.c)
     install(TARGETS rovy_navigation_cameras
             ARCHIVE DESTINATION ${CATKIN_PACKAGE_LIB_DESTINATION}
             LIBRARY DESTINATION ${CATKIN_PACKAGE_LIB_DESTINATION}

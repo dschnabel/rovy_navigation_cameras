@@ -24,6 +24,7 @@ Camera(5000, odomBuffer)
 ,rtabmapCallback_(callback)
 ,scanOnlyRound_(true)
 ,scanSequence_(0)
+,scanMedianBufferSkipElements_(SCAN_MEDIAN_FILTER_ELEMENTS/2)
 #if D435_PUBLISH_COLOR_DEPTH
 ,imageTransport_(nodeHandle)
 ,colorPub_(imageTransport_.advertise("color", 1))
@@ -54,6 +55,9 @@ Camera(5000, odomBuffer)
         }
         cout << "D435Camera: no floor data" << endl;
     }
+
+    scanMedianFilter_.numNodes = SCAN_MEDIAN_FILTER_ELEMENTS;
+    scanMedianFilter_.medianBuffer = scanMedianBuffer_;
 
     start();
 }
@@ -199,6 +203,10 @@ void D435Camera::cameraThread() {
         cerr << "d435: " << e.what() << endl;
     }
 
+    if (scanThread_.joinable()) {
+        scanThread_.join();
+    }
+
     cout << "D435Camera terminated" << endl;
 }
 
@@ -318,16 +326,18 @@ double D435Camera::magnitudeOfRay(const cv::Point3d& ray) {
 
 void D435Camera::processScan(ros::Time& ts) {
     cv::Size depth_size = matDepthImg_.size();
-    int width = depth_size.width;
-    int height = depth_size.height;
+    uint width = depth_size.width;
+    uint height = depth_size.height;
     uint16_t distance[width] = {0};
     const float center_x = camModel_.cx();
     const float constant_x = 1.0 / camModel_.fx();
 
     scan_->ranges.assign(width, numeric_limits<float>::quiet_NaN());
 
-    for (int u = 0; u < width; u++) {
-        for (int v = 0; v < height; v++) {
+    MEDIANFILTER_Init(&scanMedianFilter_);
+
+    for (uint u = 0; u < width; u++) {
+        for (uint v = 0; v < height; v++) {
             uint16_t depth_i = matDepthImg_.at<uint16_t>(height-v-1, u);
             if (depth_i > 0) {
 #if FLOOR_CALIBRATION_MODE
@@ -348,8 +358,13 @@ void D435Camera::processScan(ros::Time& ts) {
             }
         }
         if (distance[u] > 0) {
-            double x = (u - center_x) * distance[u] * constant_x;
-            double z = distance[u];
+            uint16_t medianDistance = MEDIANFILTER_Insert(&scanMedianFilter_, distance[u]);
+            if (u < scanMedianBufferSkipElements_) {
+                // don't use median for first few elements
+                medianDistance = distance[u];
+            }
+            double x = (u - center_x) * medianDistance * constant_x;
+            double z = medianDistance;
             scan_->ranges[width-u-1] = hypot(x, z) / 1000.0;
         }
     }
@@ -406,9 +421,15 @@ bool D435Camera::isFloor(const int x, const int y, const int distance) {
     const double &min = floorData.first;
 //    const double &max = floorData.second;
 
-    if (distance >= min-10-y*0.5) {
+    double tolerance = 15+(pow(y,2)*0.01);
+    if (distance >= min-tolerance) {
         return true;
     }
+//    if (y<20) {
+//        cout<<"y:"<<y<<", distance: "<<distance<<
+//                ", min: "<<min<<", diff: "<<(min-distance)<<
+//                ", tolerance: "<<tolerance<<", missing: "<<(min-tolerance-distance)<<endl;
+//    }
 
     return false;
 }
