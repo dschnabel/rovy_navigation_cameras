@@ -4,11 +4,17 @@
 #include <tf/transform_broadcaster.h>
 #include <geometry_msgs/PoseStamped.h>
 
+#include <mutex_t265.h>
+
 T265Camera::T265Camera(ros::NodeHandle& nodeHandle, ThreadSafeDeque& odomBuffer)
 :
 Camera(1000, odomBuffer)
+,oldPoseTS_(0.0)
+,linearVelocity_(0.0)
+,angularVelocity_(0.0)
 {
     cfg_.enable_stream(RS2_STREAM_POSE, RS2_FORMAT_6DOF);
+    cfg_.enable_stream(RS2_STREAM_GYRO, RS2_FORMAT_MOTION_XYZ32F);
 
     auto sensor = getSensors().front();
     sensor.set_option(RS2_OPTION_ENABLE_RELOCALIZATION, 0);
@@ -29,20 +35,15 @@ void T265Camera::cameraThread() {
         while (ros::ok()) {
             try {
                 auto frames = waitForFrames();
-                auto frame = frames.first_or_default(RS2_STREAM_POSE);
 
-                ros::Time ts = getTimeStamp(frame);
-
-                if (odomPub_.getNumSubscribers() > 0) {
-                    nav_msgs::Odometry odom_msg;
-                    buildOdomFrame(frame, ts, odom_msg, sequence_);
-
-                    odomPub_.publish(odom_msg);
-                    sequence_++;
+                auto pose = frames.first_or_default(RS2_STREAM_POSE);
+                if (pose.get_timestamp() != oldPoseTS_) {
+                    processPoseFrame(pose);
+                    oldPoseTS_ = pose.get_timestamp();
+                } else {
+                    auto gyro = frames.first_or_default(RS2_STREAM_GYRO);
+                    processGyroFrame(gyro);
                 }
-
-//                cout << "T265: " << ts << endl;
-                odomBuffer_.update(ts.toNSec(), frame);
 
             } catch (const rs2::error & e) {
                 cout << "restarting T265..." << endl;
@@ -170,4 +171,50 @@ void T265Camera::buildOdomFrame(rs2::frame& f, const ros::Time& t,
             0, 0, 0, cov_twist, 0, 0,
             0, 0, 0, 0, cov_twist, 0,
             0, 0, 0, 0, 0, cov_twist};
+}
+
+void T265Camera::processPoseFrame(frame &pose) {
+    ros::Time ts = getTimeStamp(pose);
+    odomBuffer_.update(ts.toNSec(), pose);
+
+//    if (odomPub_.getNumSubscribers() > 0) {
+//        nav_msgs::Odometry odom_msg;
+//        buildOdomFrame(pose, ts, odom_msg, sequence_);
+//        linearVelocity_ = (float)odom_msg.twist.twist.linear.x;
+//
+//        odomPub_.publish(odom_msg);
+//        sequence_++;
+//    }
+
+    auto p = pose.as<rs2::pose_frame>().get_pose_data();
+
+    tf::Quaternion q(p.rotation.z, p.rotation.x, -p.rotation.y, p.rotation.w);
+
+    geometry_msgs::Vector3Stamped v_msg;
+    v_msg.vector.x = -p.velocity.z;
+    v_msg.vector.y = -p.velocity.x;
+    v_msg.vector.z = p.velocity.y;
+    tf::Vector3 tfv;
+    tf::vector3MsgToTF(v_msg.vector,tfv);
+    tfv=tf::quatRotate(q,tfv);
+    tf::vector3TFToMsg(tfv,v_msg.vector);
+
+    geometry_msgs::Vector3Stamped om_msg;
+    om_msg.vector.x = -p.angular_velocity.z;
+    om_msg.vector.y = -p.angular_velocity.x;
+    om_msg.vector.z = p.angular_velocity.y;
+    tf::vector3MsgToTF(om_msg.vector,tfv);
+    tfv=tf::quatRotate(q,tfv);
+    tf::vector3TFToMsg(tfv,om_msg.vector);
+
+    linearVelocity_ = v_msg.vector.x;
+    angularVelocity_ = om_msg.vector.z;
+}
+
+void T265Camera::processGyroFrame(frame &gyro) {
+    auto data = gyro.as<rs2::motion_frame>().get_motion_data();
+    float gz = data.z;
+
+    // write to shared memory
+    t265_set_data(linearVelocity_, angularVelocity_, gz);
 }

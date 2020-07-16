@@ -3,6 +3,7 @@
 	<name>rovy_navigation_cameras</name>
 	<comment></comment>
 	<projects>
+		<project>utils</project>
 	</projects>
 	<buildSpec>
 		<buildCommand>

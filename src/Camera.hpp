@@ -76,8 +76,12 @@ public:
 private:
     void cameraThread();
     void publishTransform();
+    void processPoseFrame(frame &pose);
+    void processGyroFrame(frame &gyro);
 
     ros::Publisher odomPub_;
+    double oldPoseTS_;
+    float linearVelocity_, angularVelocity_;
 };
 
 class D435Camera: public Camera {

@@ -38,4 +38,4 @@ endif()
 
 target_link_libraries(rovy_navigation_cameras ${catkin_LIBRARIES})
 
-set(CMAKE_CXX_FLAGS "-Wformat -Wformat-security -Wall -Wno-psabi -lrealsense2 ${CMAKE_CXX_FLAGS}")
+set(CMAKE_CXX_FLAGS "-Wformat -Wformat-security -Wall -Wno-psabi -lrealsense2 -lutils ${CMAKE_CXX_FLAGS}")
