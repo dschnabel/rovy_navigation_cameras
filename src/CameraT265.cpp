@@ -9,12 +9,9 @@
 T265Camera::T265Camera(ros::NodeHandle& nodeHandle, ThreadSafeDeque& odomBuffer)
 :
 Camera(1000, odomBuffer)
-,oldPoseTS_(0.0)
-,linearVelocity_(0.0)
-,angularVelocity_(0.0)
+,sharedMemIndex_(0)
 {
     cfg_.enable_stream(RS2_STREAM_POSE, RS2_FORMAT_6DOF);
-    cfg_.enable_stream(RS2_STREAM_GYRO, RS2_FORMAT_MOTION_XYZ32F);
 
     auto sensor = getSensors().front();
     sensor.set_option(RS2_OPTION_ENABLE_RELOCALIZATION, 0);
@@ -35,16 +32,8 @@ void T265Camera::cameraThread() {
         while (ros::ok()) {
             try {
                 auto frames = waitForFrames();
-
                 auto pose = frames.first_or_default(RS2_STREAM_POSE);
-                if (pose.get_timestamp() != oldPoseTS_) {
-                    processPoseFrame(pose);
-                    oldPoseTS_ = pose.get_timestamp();
-                } else {
-                    auto gyro = frames.first_or_default(RS2_STREAM_GYRO);
-                    processGyroFrame(gyro);
-                }
-
+                processPoseFrame(pose);
             } catch (const rs2::error & e) {
                 cout << "restarting T265..." << endl;
                 restartPipe();
@@ -207,14 +196,7 @@ void T265Camera::processPoseFrame(frame &pose) {
     tfv=tf::quatRotate(q,tfv);
     tf::vector3TFToMsg(tfv,om_msg.vector);
 
-    linearVelocity_ = v_msg.vector.x;
-    angularVelocity_ = om_msg.vector.z;
-}
-
-void T265Camera::processGyroFrame(frame &gyro) {
-    auto data = gyro.as<rs2::motion_frame>().get_motion_data();
-    float gz = data.z;
-
-    // write to shared memory
-    t265_set_data(linearVelocity_, angularVelocity_, gz);
+    float linearVelocity = v_msg.vector.x;
+    float angularVelocity = om_msg.vector.z;
+    t265_set_data(sharedMemIndex_++, linearVelocity, angularVelocity);
 }
