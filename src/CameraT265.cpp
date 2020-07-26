@@ -57,14 +57,12 @@ void T265Camera::publishTransform() {
     } transformMsg_t;
 
     transformMsg_t messages[] = {
-            {"t265_pose_frame", "t265_link", 0, 0, 0, 0, 0, 0, 1},
-            {"t265_link", "d435_link", 0, 0, 0, 0, 0, 0, 1},
-            {"d435_link", "d435_depth_frame", 0, 0, 0, 0, 0, 0, 1},
-            {"d435_depth_frame", "d435_depth_optical_frame", 0, 0, 0, -0.5, 0.5, -0.5, 0.5},
+            {"t265_link", "base_link", -0.11, 0, 0, 0, 0, 0, 1},
+            {"t265_link", "d435_link", 0, 0, 0.055, 0, 0, 0, 1},
+            {"d435_link", "d435_depth_optical_frame", 0, 0, 0, -0.5, 0.5, -0.5, 0.5},
             {"d435_link", "d435_color_frame", -0.000368016, 0.0146025, 9.40469e-05, 0.00265565,
                     -0.00162789, 0.00487547, 0.999983},
-            {"d435_color_frame", "d435_color_optical_frame", 0, 0, 0, -0.5, 0.5, -0.5, 0.5},
-            {"d435_link", "d435_scan", 0, 0, 0, 0, 0, 0, 1}
+            {"d435_color_frame", "d435_color_optical_frame", 0, 0, 0, -0.5, 0.5, -0.5, 0.5}
     };
 
     ros::Time t = ros::Time::now();
@@ -90,7 +88,7 @@ void T265Camera::publishTransform() {
 }
 
 void T265Camera::buildOdomFrame(rs2::frame& f, const ros::Time& t,
-        nav_msgs::Odometry& odom_msg, ulong sequence) {
+        nav_msgs::Odometry& odom_msg, ulong sequence, bool doBroadcast) {
 
     auto pose = f.as<rs2::pose_frame>().get_pose_data();
 
@@ -103,19 +101,21 @@ void T265Camera::buildOdomFrame(rs2::frame& f, const ros::Time& t,
     pose_msg.pose.orientation.z = pose.rotation.y;
     pose_msg.pose.orientation.w = pose.rotation.w;
 
-    static tf2_ros::TransformBroadcaster br;
-    geometry_msgs::TransformStamped msg;
-    msg.header.stamp = t;
-    msg.header.frame_id = "world";
-    msg.child_frame_id = "t265_pose_frame";
-    msg.transform.translation.x = pose_msg.pose.position.x;
-    msg.transform.translation.y = pose_msg.pose.position.y;
-    msg.transform.translation.z = pose_msg.pose.position.z;
-    msg.transform.rotation.x = pose_msg.pose.orientation.x;
-    msg.transform.rotation.y = pose_msg.pose.orientation.y;
-    msg.transform.rotation.z = pose_msg.pose.orientation.z;
-    msg.transform.rotation.w = pose_msg.pose.orientation.w;
-    br.sendTransform(msg);
+    if (doBroadcast) {
+        static tf2_ros::TransformBroadcaster br;
+        geometry_msgs::TransformStamped msg;
+        msg.header.stamp = t;
+        msg.header.frame_id = "world";
+        msg.child_frame_id = "t265_link";
+        msg.transform.translation.x = pose_msg.pose.position.x;
+        msg.transform.translation.y = pose_msg.pose.position.y;
+        msg.transform.translation.z = pose_msg.pose.position.z;
+        msg.transform.rotation.x = pose_msg.pose.orientation.x;
+        msg.transform.rotation.y = pose_msg.pose.orientation.y;
+        msg.transform.rotation.z = pose_msg.pose.orientation.z;
+        msg.transform.rotation.w = pose_msg.pose.orientation.w;
+        br.sendTransform(msg);
+    }
 
     double cov_pose(0.01 * pow(10, 3-(int)pose.tracker_confidence));
     double cov_twist(0.01 * pow(10, 1-(int)pose.tracker_confidence));
@@ -140,7 +140,7 @@ void T265Camera::buildOdomFrame(rs2::frame& f, const ros::Time& t,
     tf::vector3TFToMsg(tfv,om_msg.vector);
 
     odom_msg.header.frame_id = "world";
-    odom_msg.child_frame_id = "t265_pose_frame";
+    odom_msg.child_frame_id = "t265_link";
     odom_msg.header.stamp = t;
     odom_msg.header.seq = sequence;
     odom_msg.pose.pose = pose_msg.pose;
@@ -153,7 +153,7 @@ void T265Camera::buildOdomFrame(rs2::frame& f, const ros::Time& t,
             0, 0, 0, 0, 0, cov_twist};
     odom_msg.twist.twist.linear = v_msg.vector;
     odom_msg.twist.twist.angular = om_msg.vector;
-    odom_msg.twist.covariance ={
+    odom_msg.twist.covariance = {
             cov_pose, 0, 0, 0, 0, 0,
             0, cov_pose, 0, 0, 0, 0,
             0, 0, cov_pose, 0, 0, 0,
@@ -166,37 +166,13 @@ void T265Camera::processPoseFrame(frame &pose) {
     ros::Time ts = getTimeStamp(pose);
     odomBuffer_.update(ts.toNSec(), pose);
 
-//    if (odomPub_.getNumSubscribers() > 0) {
-//        nav_msgs::Odometry odom_msg;
-//        buildOdomFrame(pose, ts, odom_msg, sequence_);
-//        linearVelocity_ = (float)odom_msg.twist.twist.linear.x;
-//
-//        odomPub_.publish(odom_msg);
-//        sequence_++;
-//    }
+    nav_msgs::Odometry odom_msg;
+    buildOdomFrame(pose, ts, odom_msg, sequence_);
 
-    auto p = pose.as<rs2::pose_frame>().get_pose_data();
+    odomPub_.publish(odom_msg);
+    sequence_++;
 
-    tf::Quaternion q(p.rotation.z, p.rotation.x, -p.rotation.y, p.rotation.w);
-
-    geometry_msgs::Vector3Stamped v_msg;
-    v_msg.vector.x = -p.velocity.z;
-    v_msg.vector.y = -p.velocity.x;
-    v_msg.vector.z = p.velocity.y;
-    tf::Vector3 tfv;
-    tf::vector3MsgToTF(v_msg.vector,tfv);
-    tfv=tf::quatRotate(q,tfv);
-    tf::vector3TFToMsg(tfv,v_msg.vector);
-
-    geometry_msgs::Vector3Stamped om_msg;
-    om_msg.vector.x = -p.angular_velocity.z;
-    om_msg.vector.y = -p.angular_velocity.x;
-    om_msg.vector.z = p.angular_velocity.y;
-    tf::vector3MsgToTF(om_msg.vector,tfv);
-    tfv=tf::quatRotate(q,tfv);
-    tf::vector3TFToMsg(tfv,om_msg.vector);
-
-    float linearVelocity = v_msg.vector.x;
-    float angularVelocity = om_msg.vector.z;
+    float linearVelocity = odom_msg.twist.twist.linear.x;
+    float angularVelocity = odom_msg.twist.twist.angular.z;
     t265_set_data(sharedMemIndex_++, linearVelocity, angularVelocity);
 }

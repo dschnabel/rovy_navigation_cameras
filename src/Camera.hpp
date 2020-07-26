@@ -72,7 +72,8 @@ class T265Camera: public Camera {
 public:
     T265Camera(ros::NodeHandle& nodeHandle, ThreadSafeDeque& odomBuffer);
     ~T265Camera();
-    static void buildOdomFrame(rs2::frame& f, const ros::Time& t, nav_msgs::Odometry& odom_msg, ulong sequence);
+    static void buildOdomFrame(rs2::frame& f, const ros::Time& t,
+            nav_msgs::Odometry& odom_msg, ulong sequence, bool doBroadcast = true);
 private:
     void cameraThread();
     void publishTransform();

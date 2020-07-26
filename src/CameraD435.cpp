@@ -176,7 +176,7 @@ void D435Camera::cameraThread() {
 
             if (rtabmapCallback_ && odomFrame) {
                 nav_msgs::Odometry odom_msg;
-                T265Camera::buildOdomFrame(*odomFrame, ts, odom_msg, sequence_);
+                T265Camera::buildOdomFrame(*odomFrame, ts, odom_msg, sequence_, false);
 
                 const nav_msgs::OdometryConstPtr odomMsgPtr(new nav_msgs::Odometry(odom_msg));
 
