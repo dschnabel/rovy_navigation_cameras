@@ -57,7 +57,7 @@ void T265Camera::publishTransform() {
     } transformMsg_t;
 
     transformMsg_t messages[] = {
-            {"t265_link", "base_link", -0.11, 0, 0, 0, 0, 0, 1},
+            {"t265_link", "base_link", -0.112, 0, 0, 0, 0, 0, 1},
             {"t265_link", "d435_link", 0, 0, 0.055, 0, 0, 0, 1},
             {"d435_link", "d435_depth_optical_frame", 0, 0, 0, -0.5, 0.5, -0.5, 0.5},
             {"d435_link", "d435_color_frame", -0.000368016, 0.0146025, 9.40469e-05, 0.00265565,
