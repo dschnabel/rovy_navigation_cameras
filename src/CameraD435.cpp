@@ -303,7 +303,7 @@ void D435Camera::updateScanInfo() {
     const double angle_min = -angleBetweenRays(center_ray, right_ray);
 
     scan_->header = camInfo_->header;
-    scan_->header.frame_id = "d435_scan";
+    scan_->header.frame_id = "d435_link";
     scan_->angle_min = angle_min;
     scan_->angle_max = angle_max;
     scan_->angle_increment = (scan_->angle_max - scan_->angle_min) / (matDepthImg_.cols-1);
