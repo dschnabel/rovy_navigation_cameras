@@ -14,7 +14,7 @@ struct floorDataPair {
 
 D435Camera::D435Camera(ros::NodeHandle& nodeHandle, ThreadSafeDeque& odomBuffer, RtabmapCallback& callback)
 :
-Camera(5000, odomBuffer)
+Camera(1000, odomBuffer)
 ,camInfo_(new sensor_msgs::CameraInfo())
 ,scan_(new sensor_msgs::LaserScan())
 ,colorFrameId_("d435_color_optical_frame")
@@ -133,7 +133,13 @@ void D435Camera::cameraThread() {
 
             rs2::frameset frames;
             do {
-                frames = waitForFrames();
+                try {
+                    frames = waitForFrames();
+                } catch (const rs2::error & e) {
+                    cout << "restarting D435..." << endl;
+                    restartPipe();
+                    cout << "restarted" << endl;
+                }
             } while (!colorArrived);
 
             ros::Time ts = getTimeStamp(frames);
