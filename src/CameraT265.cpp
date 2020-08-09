@@ -1,5 +1,7 @@
 #include "Camera.hpp"
 
+#include<fstream>
+
 #include <tf2_ros/static_transform_broadcaster.h>
 #include <tf/transform_broadcaster.h>
 #include <geometry_msgs/PoseStamped.h>
@@ -10,12 +12,26 @@ T265Camera::T265Camera(ros::NodeHandle& nodeHandle, ThreadSafeDeque& odomBuffer)
 :
 Camera(1000, odomBuffer)
 ,sharedMemIndex_(0)
+,wheelOdom_(NULL)
+,wheelOdomVector_({0, 0, 0})
 {
     cfg_.enable_stream(RS2_STREAM_POSE, RS2_FORMAT_6DOF);
 
     auto sensor = getSensors().front();
     sensor.set_option(RS2_OPTION_ENABLE_RELOCALIZATION, 0);
     sensor.set_option(RS2_OPTION_ENABLE_POSE_JUMPING, 0);
+
+//    ifstream calibFile("/opt/t265_wheel_calibration.json");
+//    if (!calibFile.fail()) {
+//        stringstream buffer;
+//        buffer << calibFile.rdbuf();
+//        vector<uint8_t> vec(buffer.str().begin(), buffer.str().end());
+//
+//        wheelOdom_ = new wheel_odometer(sensor);
+//        wheelOdom_->load_wheel_odometery_config(vec);
+//    } else {
+//        cout << "t265: Could not open wheel odom calibration file" << endl;
+//    }
 
     publishTransform();
 
@@ -24,7 +40,10 @@ Camera(1000, odomBuffer)
     start();
 }
 
-T265Camera::~T265Camera() { wait(); }
+T265Camera::~T265Camera() {
+    wait();
+    delete wheelOdom_;
+}
 
 void T265Camera::cameraThread() {
     cout << "T265Camera started" << endl;
@@ -33,6 +52,12 @@ void T265Camera::cameraThread() {
             try {
                 auto frames = waitForFrames();
                 auto pose = frames.first_or_default(RS2_STREAM_POSE);
+
+//                if (wheelOdom_) {
+//                    rs2_vector vec = {0,0,0};
+//                    wheelOdom_->send_wheel_odometry(0, 0, vec);
+//                }
+
                 processPoseFrame(pose);
             } catch (const rs2::error & e) {
                 cout << "restarting T265..." << endl;

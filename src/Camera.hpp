@@ -49,13 +49,13 @@ protected:
     void start();
     void wait();
 
-    vector<rs2::sensor> getSensors();
-    rs2::frameset waitForFrames(int timeoutMS = -1);
+    vector<sensor> getSensors();
+    frameset waitForFrames(int timeoutMS = -1);
     void clearFrames();
-    ros::Time getTimeStamp(rs2::frame& frame);
+    ros::Time getTimeStamp(frame& frame);
     void restartPipe();
 
-    rs2::config cfg_;
+    config cfg_;
     ulong sequence_;
     ThreadSafeDeque& odomBuffer_;
 private:
@@ -63,7 +63,7 @@ private:
     virtual void cameraThread() = 0;
 
     const int timeoutMS_;
-    shared_ptr<rs2::pipeline> pipe_;
+    shared_ptr<pipeline> pipe_;
 
     thread cameraThread_;
 };
@@ -72,7 +72,7 @@ class T265Camera: public Camera {
 public:
     T265Camera(ros::NodeHandle& nodeHandle, ThreadSafeDeque& odomBuffer);
     ~T265Camera();
-    static void buildOdomFrame(rs2::frame& f, const ros::Time& t,
+    static void buildOdomFrame(frame& f, const ros::Time& t,
             nav_msgs::Odometry& odom_msg, ulong sequence, bool doBroadcast = true);
 private:
     void cameraThread();
@@ -81,6 +81,8 @@ private:
 
     ros::Publisher odomPub_;
     uint sharedMemIndex_;
+    wheel_odometer* wheelOdom_;
+    rs2_vector wheelOdomVector_;
 };
 
 class D435Camera: public Camera {
@@ -89,9 +91,9 @@ public:
     ~D435Camera();
 private:
     void cameraThread();
-    uint buildImageFrame(const rs2::video_frame& frame, const ros::Time& t, sensor_msgs::ImagePtr& img_msg,
+    uint buildImageFrame(const video_frame& frame, const ros::Time& t, sensor_msgs::ImagePtr& img_msg,
             cv::Mat& matImg, const int type, const string& encoding, const string& frameId);
-    void updateCamInfo(rs2::video_frame& frame);
+    void updateCamInfo(video_frame& frame);
     void updateScanInfo();
     double magnitudeOfRay(const cv::Point3d& ray);
     double angleBetweenRays(const cv::Point3d& ray1, const cv::Point3d& ray2);
