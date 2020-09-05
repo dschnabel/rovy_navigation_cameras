@@ -31,7 +31,7 @@ int MEDIANFILTER_Init(sMedianFilter_t *medianFilter)
     return -1;
 }
 
-uint16_t MEDIANFILTER_Insert(sMedianFilter_t *medianFilter, uint16_t sample)
+double MEDIANFILTER_Insert(sMedianFilter_t *medianFilter, double sample)
 {
     unsigned int i;
     sMedianNode_t *newNode, *it;

@@ -16,7 +16,7 @@ extern "C" {
 
 typedef struct sMedianNode
 {
-    uint16_t value;                 //sample value
+    double value;                   //sample value
     struct sMedianNode *nextAge;    //pointer to next oldest value
     struct sMedianNode *nextValue;  //pointer to next smallest value
     struct sMedianNode *prevValue;  //pointer to previous smallest value
@@ -32,7 +32,7 @@ typedef struct
 }sMedianFilter_t;
 
 int MEDIANFILTER_Init(sMedianFilter_t *medianFilter);
-uint16_t MEDIANFILTER_Insert(sMedianFilter_t *medianFilter, uint16_t sample);
+double MEDIANFILTER_Insert(sMedianFilter_t *medianFilter, double sample);
 
 #ifdef __cplusplus
 }

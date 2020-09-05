@@ -26,12 +26,11 @@
 #define D435_PUBLISH_COLOR_DEPTH 0
 #define D435_RATE_HZ 2
 
-#define FLOOR_CALIBRATION_MODE 0
-#define FLOOR_MATRIX_WIDTH   640
-#define FLOOR_MATRIX_HEIGHT   145
-#define FLOOR_UNDEFINED_DISTANCE 0
+#define MATRIX_WIDTH   640
+#define MATRIX_HEIGHT  480
 
-#define SCAN_MEDIAN_FILTER_ELEMENTS 51 // must be uneven number
+#define SCAN_MEDIAN_FILTER_ELEMENTS_1  9 // must be uneven number
+#define SCAN_MEDIAN_FILTER_ELEMENTS_2 51 // must be uneven number
 
 using namespace std;
 
@@ -96,8 +95,6 @@ private:
     double magnitudeOfRay(const cv::Point3d& ray);
     double angleBetweenRays(const cv::Point3d& ray1, const cv::Point3d& ray2);
     void processScan(ros::Time& ts);
-    void calibrateFloor(const int x, const int y, const int distance);
-    bool isFloor(const int x, const int y, const int distance);
 
     cv::Mat matColorImg_, matDepthImg_;
     sensor_msgs::CameraInfoPtr camInfo_;
@@ -111,9 +108,10 @@ private:
     bool scanOnlyRound_;
     thread scanThread_;
     ulong scanSequence_;
-    sMedianFilter_t scanMedianFilter_;
-    sMedianNode_t scanMedianBuffer_[SCAN_MEDIAN_FILTER_ELEMENTS];
-    const uint scanMedianBufferSkipElements_;
+    sMedianFilter_t scanMedianFilter1_, scanMedianFilter2_;
+    sMedianNode_t scanMedianBuffer1_[SCAN_MEDIAN_FILTER_ELEMENTS_1];
+    sMedianNode_t scanMedianBuffer2_[SCAN_MEDIAN_FILTER_ELEMENTS_2];
+    const uint scanMedianBufferSkipElements1_, scanMedianBufferSkipElements2_;
 
 #if D435_PUBLISH_COLOR_DEPTH
     image_transport::ImageTransport imageTransport_;
@@ -123,7 +121,7 @@ private:
 #endif
     ros::Publisher scanPub_;
 
-    pair<int,int> floorMatrix_[FLOOR_MATRIX_WIDTH][FLOOR_MATRIX_HEIGHT];
+    cv::Point3d rayNormals_[MATRIX_WIDTH][MATRIX_HEIGHT];
 };
 
 #endif /* SRC_CAMERA_HPP_ */
