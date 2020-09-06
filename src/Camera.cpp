@@ -17,6 +17,7 @@ void Camera::wait() {
     if (cameraThread_.joinable()) {
         cameraThread_.join();
     }
+    pipe_->stop();
 }
 
 void Camera::dispatch(void *arg) {
