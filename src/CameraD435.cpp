@@ -50,6 +50,7 @@ void D435Camera::cameraThread() {
     try {
         while (ros::ok()) {
             rateHz_.sleep();
+            int restarted = false;
 
             clearFrames();
             colorArrived = false;
@@ -66,9 +67,12 @@ void D435Camera::cameraThread() {
                     cout << "restarting D435..." << endl;
                     restartPipe();
                     cout << "restarted" << endl;
-                    continue;
+                    restarted = true;
+                    break;
                 }
             } while (!colorArrived);
+
+            if (restarted) continue;
 
             ros::Time ts = getTimeStamp(frames);
 
